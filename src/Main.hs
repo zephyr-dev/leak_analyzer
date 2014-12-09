@@ -1,45 +1,53 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections     #-}
 
 module Main where
 
-import Data.Char (isDigit)
-import Control.Applicative (Alternative, pure, liftA2, (<$>), (<*>), (<*), (*>), (<|>))
-import Data.Text (Text)
-import qualified Data.Text as T
+import           Control.Applicative        (Alternative, liftA2, pure, (*>),
+                                             (<$>), (<*), (<*>), (<|>))
+import           Data.Char                  (isDigit)
+import           Data.Text                  (Text)
+import qualified Data.Text                  as T
+import           Prelude                    hiding (readFile)
 
-import Data.Attoparsec.Combinator (many', manyTill)
-import Data.Attoparsec.Text (Parser (..), many1, char, isEndOfLine, skipWhile, string, takeTill, parse, digit, endOfLine, endOfInput, isEndOfLine, sepBy, maybeResult, try, anyChar)
+import           Data.Attoparsec.Combinator (many', manyTill)
+import           Data.Attoparsec.Text       (Parser (..), anyChar, char, digit,
+                                             endOfInput, endOfLine, feed,
+                                             isEndOfLine, isEndOfLine, many1,
+                                             maybeResult, parse, sepBy,
+                                             skipWhile, string, takeTill, try)
 
-import qualified Data.Attoparsec.Text as AP
+import qualified Data.Attoparsec.Text       as AP
 
-import Data.Time.Exts.Parser (parseUnixDateTimeMicros)
-import Data.Time.Exts.Unix (UnixDateTimeMicros(..), createUnixDateTimeMicros)
-import Data.Time.Exts.Base (Year(..), Month(..), Day(..), Hour(..), Minute(..), Second(..), Micros(..))
-import Data.Int (Int32, Int64)
+import           Data.Int                   (Int32, Int64)
+import           Data.Time.Exts.Base        (Day (..), Hour (..), Micros (..),
+                                             Minute (..), Month (..),
+                                             Second (..), Year (..))
+import           Data.Time.Exts.Parser      (parseUnixDateTimeMicros)
+import           Data.Time.Exts.Unix        (UnixDateTimeMicros (..),
+                                             createUnixDateTimeMicros)
 
-import Data.Map (Map)
-import qualified Data.Map as M
+import           Data.Map                   (Map)
+import qualified Data.Map                   as M
+
+import           Data.Text.IO               (readFile)
 
 
 data Entry = Router {
-    timestamp   :: Maybe Timestamp
-  , options     :: Options
-
-  , path        :: Text
-  , status      :: Status
+    timestamp :: Maybe Timestamp
+  , options   :: Options
 } | ProcessRunningMemory {
-    timestamp   :: Maybe Timestamp
-  , source      :: Source
-  , dyno        :: Dyno
+    timestamp :: Maybe Timestamp
+  , source    :: Source
+  , dyno      :: Dyno
 
-  , memsize     :: Int
+  , memsize   :: Int
 } | MemoryQuotaExceeded {
-    timestamp   :: Maybe Timestamp
-  , source      :: Source
-  , dyno        :: Dyno
+    timestamp :: Maybe Timestamp
+  , source    :: Source
+  , dyno      :: Dyno
 } | UnknownEntry {
-    entry       :: Text
+    entry :: Text
   } deriving Show
 
 type Timestamp = UnixDateTimeMicros
@@ -47,15 +55,13 @@ type Timestamp = UnixDateTimeMicros
 data Source = HerokuSource | AppSource | OtherSource {src :: Text} deriving Show
 
 data Dyno = Web {
-    number      :: DynoNumber
+    number :: DynoNumber
   } | Background {
-    number      :: DynoNumber
+    number :: DynoNumber
   } | HerokuRouter
   deriving Show
 
 type DynoNumber = Int
-type Status = Int
-
 type Options = Map Text Text
 
 {- data Code = H18 |  -}
@@ -64,7 +70,7 @@ main :: IO ()
 main = do
   logContent <- readFile "log"
 
-  putStrLn $ show $ map (maybeResult . parse entryParser . T.pack) $ lines logContent
+  putStrLn $ show $ map (\s -> maybeResult $ feed (parse entryParser s) "") $ T.lines logContent
 
 
 entryParser :: Parser Entry
@@ -81,8 +87,6 @@ routerParser = do
   return $ Router {
       timestamp = ts
     , options = opts
-    , path = ""
-    , status = 200
     }
 
 processRunningMemoryParser :: Parser Entry
@@ -108,18 +112,18 @@ memoryQuotaExceededParser = do
     }
 
 unknownEntryParser :: Parser Entry
-unknownEntryParser = pure $ UnknownEntry "unknown"
+unknownEntryParser = UnknownEntry <$> (AP.takeWhile (\_ -> True))
 
 optionsParser :: Parser Options
 optionsParser = do
-  opts <- many' optionParser
+  opts <- sepBy optionParser (char ' ')
   return $ M.fromList opts
 
 optionParser :: Parser (Text, Text)
 optionParser = (,) <$> (takeTill (=='=') <* char '=') <*> consumeValue
 
 consumeValue :: Parser Text
-consumeValue = (char '"' *> takeTill (=='"') <* char '"') <|> consumeField
+consumeValue = (char '"' *> takeTill (=='"') <* char '"') <|> takeTill (==' ')
 
 timestampSourceAndDynoParser :: Parser (Maybe Timestamp, Source, Dyno)
 timestampSourceAndDynoParser = (,,) <$> (consumeField *> consumeField *> timestampParser <* char ' ') <*> sourceParser <*> (dynoParser <* separatorParser)
@@ -148,7 +152,7 @@ timestampParser = do
   crap <- char '+' >> digit >> digit >> char ':' >> digit >> digit
   return $ eitherToMaybe $ parseUnixDateTimeMicros "%FT%T.%Q" formattedTimestamp
 
-  where 
+  where
     eitherToMaybe (Left _)  = Nothing
     eitherToMaybe (Right x) = Just x
 
@@ -169,6 +173,6 @@ consumeField = do
     {- <*> (Minute <$> intParser) <* char ':' -}
     {- <*> (Second <$> intParser) <* char '.' -}
     {- <*> (Micros <$> intParser) <* (takeTill (==' ')) -}
-    
+
 intParser :: Parser Int
 intParser = read . T.unpack <$> AP.takeWhile isDigit
