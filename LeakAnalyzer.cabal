@@ -1,0 +1,31 @@
+name:                LeakAnalyzer
+version:             0.1.0.0
+-- synopsis:            
+-- description:         
+-- license:             
+license:             AllRightsReserved
+author:              Alex Babkin
+maintainer:          ababkin@gmail.com
+-- copyright:           
+-- category:            
+build-type:          Simple
+cabal-version:       >=1.8
+
+executable LeakAnalyzer
+  hs-source-dirs: src
+  main-is:        Main.hs
+
+  -- ghc-options:    -O3 -Wall -threaded
+  ghc-options:    -Wall -O2 -static
+  build-depends:
+      base >= 4 && <= 5
+    , attoparsec
+    , either
+    , mtl
+    , transformers
+    , lens
+    , containers
+    , time-exts
+    , text
+    , either-unwrap
+
