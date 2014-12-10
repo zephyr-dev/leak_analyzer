@@ -3,21 +3,13 @@
 
 module Main where
 
-import           Control.Applicative        (Alternative, liftA2, pure, (*>),
-                                             (<$>), (<*), (<*>), (<|>))
+import System.Environment (getArgs)
 import           Data.Char                  (isDigit)
 import           Data.Text                  (Text)
 import qualified Data.Text                  as T
 import           Prelude                    hiding (readFile)
 
-import           Data.Attoparsec.Combinator (many', manyTill)
-import           Data.Attoparsec.Text       (Parser (..), anyChar, char, digit,
-                                             endOfInput, endOfLine, feed,
-                                             isEndOfLine, isEndOfLine, many1,
-                                             maybeResult, parse, sepBy,
-                                             skipWhile, string, takeTill, try)
-
-import qualified Data.Attoparsec.Text       as AP
+import           Data.Attoparsec.Text       (feed, maybeResult, parse)
 
 import           Data.Int                   (Int32, Int64)
 import           Data.Time.Exts.Base        (Day (..), Hour (..), Micros (..),
@@ -31,148 +23,57 @@ import           Data.Map                   (Map)
 import qualified Data.Map                   as M
 
 import           Data.Text.IO               (readFile)
+import Data.Maybe (fromJust, catMaybes)
+import Data.Foldable (fold, foldMap)
+import Data.Monoid (Monoid (..), (<>))
+import Data.List (foldl')
+
+import Types
+import Parsers (entryParser, dynoParser)
 
 
-data Entry = Router {
-    timestamp :: Maybe Timestamp
-  , options   :: Options
-} | ProcessRunningMemory {
-    timestamp :: Maybe Timestamp
-  , source    :: Source
-  , dyno      :: Dyno
 
-  , memsize   :: Int
-} | MemoryQuotaExceeded {
-    timestamp :: Maybe Timestamp
-  , source    :: Source
-  , dyno      :: Dyno
-} | UnknownEntry {
-    entry :: Text
-  } deriving Show
-
-type Timestamp = UnixDateTimeMicros
-
-data Source = HerokuSource | AppSource | OtherSource {src :: Text} deriving Show
-
-data Dyno = Web {
-    number :: DynoNumber
-  } | Background {
-    number :: DynoNumber
-  } | HerokuRouter
-  deriving Show
-
-type DynoNumber = Int
-type Options = Map Text Text
-
-{- data Code = H18 |  -}
 
 main :: IO ()
 main = do
-  logContent <- readFile "log"
+  [logFilename] <- getArgs
+  logContent <- readFile logFilename
 
-  putStrLn $ show $ map (\s -> maybeResult $ feed (parse entryParser s) "") $ T.lines logContent
-
-
-entryParser :: Parser Entry
-entryParser = (try routerParser) <|>
-              (try processRunningMemoryParser) <|>
-              (try memoryQuotaExceededParser) <|>
-              unknownEntryParser
-
-
-routerParser :: Parser Entry
-routerParser = do
-  (ts, HerokuSource, HerokuRouter) <- timestampSourceAndDynoParser
-  opts <- optionsParser
-  return $ Router {
-      timestamp = ts
-    , options = opts
-    }
-
-processRunningMemoryParser :: Parser Entry
-processRunningMemoryParser = do
-  (ts, src, dyn) <- timestampSourceAndDynoParser
-  string "Process running mem="
-  mem <- intParser
-  return $ ProcessRunningMemory {
-      timestamp = ts
-    , source = src
-    , dyno = dyn
-    , memsize = mem
-    }
-
-memoryQuotaExceededParser :: Parser Entry
-memoryQuotaExceededParser = do
-  (ts, src, dyn) <- timestampSourceAndDynoParser
-  string "Error R14 (Memory quota exceeded)"
-  return $ MemoryQuotaExceeded {
-      timestamp = ts
-    , source = src
-    , dyno = dyn
-    }
-
-unknownEntryParser :: Parser Entry
-unknownEntryParser = UnknownEntry <$> (AP.takeWhile (\_ -> True))
-
-optionsParser :: Parser Options
-optionsParser = do
-  opts <- sepBy optionParser (char ' ')
-  return $ M.fromList opts
-
-optionParser :: Parser (Text, Text)
-optionParser = (,) <$> (takeTill (=='=') <* char '=') <*> consumeValue
-
-consumeValue :: Parser Text
-consumeValue = (char '"' *> takeTill (=='"') <* char '"') <|> takeTill (==' ')
-
-timestampSourceAndDynoParser :: Parser (Maybe Timestamp, Source, Dyno)
-timestampSourceAndDynoParser = (,,) <$> (consumeField *> consumeField *> timestampParser <* char ' ') <*> sourceParser <*> (dynoParser <* separatorParser)
-
-
-separatorParser = string " - - "
-
-dynoParser :: Parser Dyno
-dynoParser = routerParser <|> webParser <|> backgroundParser
-  where
-    webParser         = Web                   <$> (string "web"        *> (char '.' *> intParser))
-    backgroundParser  = Background            <$> (string "background" *> (char '.' *> intParser))
-    routerParser      = (\_ -> HerokuRouter)  <$> (string "router")
-
-sourceParser :: Parser Source
-sourceParser = do
-  src <- consumeField
-  return $ case src of
-    "heroku"  -> HerokuSource
-    "app"     -> AppSource
-    _         -> OtherSource src
-
-timestampParser :: Parser (Maybe Timestamp)
-timestampParser = do
-  formattedTimestamp <- takeTill (=='+')
-  crap <- char '+' >> digit >> digit >> char ':' >> digit >> digit
-  return $ eitherToMaybe $ parseUnixDateTimeMicros "%FT%T.%Q" formattedTimestamp
+  putStrLn . show . dynoMemDiffPathsHistogram $ logContent
+  {- putStrLn $ show $ buildMemDiff $  -}
 
   where
-    eitherToMaybe (Left _)  = Nothing
-    eitherToMaybe (Right x) = Just x
-
-consumeField :: Parser Text
-consumeField = do
-  content <- takeTill (==' ')
-  char ' '
-  return content
+    dynoMemDiffPathsHistogram = (M.map buildMemDiffPathsHistogram) .dynoMemDiffPathsMap
+    dynoMemDiffPathsMap = (M.map buildMemDiffPathMap) . unDynoEntriesMap . dynoEntryMap
+    dynoEntryMap = foldMap (\e -> DynoEntriesMap $ M.singleton (dyno e) [e]) . allEntries
+    allEntries = catMaybes . map (\s -> maybeResult $ feed (parse entryParser s) "") . T.lines
 
 
-{- timestampParser :: Parser UnixDateTimeMicros -}
-{- timestampParser = -}
-  {- createUnixDateTimeMicros <$> -}
-        {- (Year   <$> intParser) <* char '-' -}
-    {- <*> (Month  <$> intParser) <* char '-' -}
-    {- <*> (Day    <$> intParser) <* char 'T' -}
-    {- <*> (Hour   <$> intParser) <* char ':' -}
-    {- <*> (Minute <$> intParser) <* char ':' -}
-    {- <*> (Second <$> intParser) <* char '.' -}
-    {- <*> (Micros <$> intParser) <* (takeTill (==' ')) -}
+buildMemDiffPathsHistogram :: MemDiffPathMap -> [(MemDiff, Int)]
+buildMemDiffPathsHistogram = M.toList . M.map length . unMemDiffPathMap
 
-intParser :: Parser Int
-intParser = read . T.unpack <$> AP.takeWhile isDigit
+-- assume entries are already ordered by the asc timestamp
+buildMemDiffPathMap :: [Entry] -> MemDiffPathMap
+buildMemDiffPathMap = mdpMap . foldl' (\mdpmb e ->
+  case e of
+    RouterEntry{path = p} ->
+      case mdpmb of
+        MemDiffPathMapBuildup{lastMemSize = Nothing}              -> mdpmb
+        MemDiffPathMapBuildup{lastMemSize = Just _, orphans = os} -> mdpmb{orphans = (path e):os}
+
+    ProcessRunningMemoryEntry {memsize = m} ->
+      case mdpmb of
+        MemDiffPathMapBuildup{lastMemSize = Nothing}              -> mdpmb{              lastMemSize = Just $ memsize e}
+
+        MemDiffPathMapBuildup{mdpMap = mdpm, lastMemSize = Just lm, orphans = os}
+
+          | lm == m                                               -> mdpmb{orphans = []}
+          | otherwise                                             -> mdpmb{orphans = [], lastMemSize = Just m, mdpMap = mdpm <> (MemDiffPathMap $ M.singleton (m - lm) os)}
+
+    _                                                             -> mdpmb
+  ) (MemDiffPathMapBuildup mempty Nothing [])
+
+{- buildMinMemIncrement :: MemDiffPathMap -> Map MemDiff Entry -}
+
+
+
