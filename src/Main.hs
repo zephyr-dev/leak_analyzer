@@ -33,21 +33,25 @@ import Parsers (entryParser, dynoParser)
 
 
 
-
 main :: IO ()
 main = do
   [logFilename] <- getArgs
   logContent <- readFile logFilename
 
-  putStrLn . show . dynoMemDiffPathsHistogram $ logContent
+  putStrLn . show . minMemMap $ logContent
   {- putStrLn $ show $ buildMemDiff $  -}
 
   where
-    dynoMemDiffPathsHistogram = (M.map buildMemDiffPathsHistogram) .dynoMemDiffPathsMap
+    minMemMap = buildMinMemMap . unDyno . dynoMemDiffPathsMap
+    unDyno = M.foldl' (<>) mempty
+    dynoMemDiffPathsHistogram = (M.map buildMemDiffPathsHistogram) . dynoMemDiffPathsMap
     dynoMemDiffPathsMap = (M.map buildMemDiffPathMap) . unDynoEntriesMap . dynoEntryMap
     dynoEntryMap = foldMap (\e -> DynoEntriesMap $ M.singleton (dyno e) [e]) . allEntries
     allEntries = catMaybes . map (\s -> maybeResult $ feed (parse entryParser s) "") . T.lines
 
+
+buildMinMemMap :: MemDiffPathMap -> MinMemMap
+buildMinMemMap =  mconcat . M.foldl' (<>) mempty . M.mapWithKey (\md -> map (\p -> MinMemMap $ M.singleton p md)) . unMemDiffPathMap
 
 buildMemDiffPathsHistogram :: MemDiffPathMap -> [(MemDiff, Int)]
 buildMemDiffPathsHistogram = M.toList . M.map length . unMemDiffPathMap

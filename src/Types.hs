@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE FlexibleInstances     #-}
 
 module Types where
 
@@ -20,6 +21,7 @@ import qualified Data.Map                   as M
 import           Data.Text.IO               (readFile)
 import Data.Foldable (fold, foldMap)
 import Data.Monoid (Monoid (..), (<>))
+import Data.List (sort, reverse)
 
 data Entry = RouterEntry {
     timestamp   :: Maybe Timestamp
@@ -83,24 +85,17 @@ data MemDiffPathMapBuildup = MemDiffPathMapBuildup {
   , lastMemSize   :: Maybe MemSize
   , orphans  :: [Path]
   } deriving Show
---
--- assume entries are already ordered by the asc timestamp
-{- instance Monoid MemDiffPathMapBuildup where -}
-  {- mempty = MemDiffPathMapBuildup (MemDiffPathMap M.empty) Nothing [] [] -}
-
-  {- MemDiffPathMapBuildup mdpm1 Nothing los1 ros2 `mappend` MemDiffPathMapBuildup mdpm2 Nothing los2 ros2 =  -}
-    {- MemDiffPathMapBuildup (mdpm1 <> mdpm2) Nothing (los1 <> los2) (ros1 <> ros2) -}
-  
-  {- MemDiffPathMapBuildup mdpm1 Nothing _ `mappend` MemDiffPathMapBuildup mdpm2 (Just lms) os =  -}
-    {- MemDiffPathMapBuildup (mdpm1 <> mdpm2) (Just lms) os -}
-  {- MemDiffPathMapBuildup mdpm1 (Just lms) os1 `mappend` MemDiffPathMapBuildup mdpm2 Nothing os2 =  -}
-    {- MemDiffPathMapBuildup (mdpm1 <> mdpm2) (Just lms) (os1 <> os2) -}
-  
-  {- MemDiffPathMapBuildup mdpm1 (Just lms1) os1 `mappend` MemDiffPathMapBuildup mdpm2 (Just lms2) os2  -}
-    {- | lms1 == lms2  = MemDiffPathMapBuildup (mdpm1 <> mdpm2) (Just lms1) [] -}
-    {- | otherwise     = MemDiffPathMapBuildup (mdpm1 <> mdpm2 <> (MemDiffPathMap $ M.singleton (makeMemDiff lms1 lms2) $ os1 <> os2)) (Just lms2) [] -}
-    {- where -}
-      {- makeMemDiff :: MemSize -> MemSize -> MemDiff -}
-      {- makeMemDiff = flip (-) -}
 
 
+
+newtype MinMemMap = MinMemMap {unMinMemMap :: Map Path MemDiff}
+
+instance Monoid MinMemMap where
+  mempty = MinMemMap mempty
+  MinMemMap mmm1 `mappend` MinMemMap mmm2 = MinMemMap $ M.unionWith min mmm1 mmm2
+
+{- instance Ord (Path, MemDiff) where -}
+  {- (_, md1) `compare` (_, md2) = md1 `compare` md2 -}
+
+instance Show MinMemMap where
+  show = unlines . map (\(m, p) -> show m ++ "\t" ++ T.unpack p) . reverse . sort . map (\(x,y) -> (y,x)) . M.toList . unMinMemMap
