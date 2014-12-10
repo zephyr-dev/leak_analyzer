@@ -9,10 +9,9 @@ import           Data.Char                  (isDigit)
 import           Data.Text                  (Text)
 import qualified Data.Text                  as T
 
-import           Data.Attoparsec.Combinator (many', manyTill)
 import           Data.Attoparsec.Text       (Parser (..), anyChar, char, digit,
                                              endOfInput, endOfLine, feed,
-                                             isEndOfLine, isEndOfLine, many1,
+                                             isEndOfLine, isEndOfLine,
                                              maybeResult, parse, sepBy,
                                              skipWhile, string, takeTill, try)
 
@@ -28,7 +27,7 @@ import           Data.Time.Exts.Unix        (UnixDateTimeMicros (..),
 
 import           Data.Map                   (Map)
 import qualified Data.Map                   as M
-import Data.Maybe (fromJust, catMaybes)
+import Data.Maybe (fromMaybe)
 
 import Types
 
@@ -45,8 +44,8 @@ routerEntryParser = do
   opts <- optionsParser
   return $ RouterEntry {
       timestamp = ts
-    , dyno      = fromJust $ (maybeResult . (flip feed) "" . parse dynoParser) =<< (M.lookup "dyno" opts)
-    , path      = fromJust $ M.lookup "path" opts
+    , dyno      = fromMaybe UnknownDyno $ (maybeResult . (flip feed) "" . parse dynoParser) =<< (M.lookup "dyno" opts)
+    , path      = fromMaybe "" $ M.lookup "path" opts
     , options   = opts
     }
 
