@@ -15,7 +15,8 @@ executable LeakAnalyzer
   hs-source-dirs: src
   main-is:        Main.hs
 
-  ghc-options:    -O2 -Wall -threaded -static
+  ghc-options:    -O2 -Wall -threaded -static -prof -rtsopts -fprof-auto -auto-all
+  -- ghc-prof-options: -fprof-auto
   -- ghc-options:    -Wall -O2 -static
   build-depends:
       base >= 4 && <= 5

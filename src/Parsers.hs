@@ -25,8 +25,8 @@ import           Data.Time.Exts.Parser      (parseUnixDateTimeMicros)
 import           Data.Time.Exts.Unix        (UnixDateTimeMicros (..),
                                              createUnixDateTimeMicros)
 
-import           Data.Map                   (Map)
-import qualified Data.Map                   as M
+import           Data.Map.Strict            (Map)
+import qualified Data.Map.Strict            as M
 import Data.Maybe (fromMaybe)
 
 import Types
@@ -44,8 +44,8 @@ routerEntryParser = do
   opts <- optionsParser
   return $ RouterEntry {
       timestamp = ts
-    , dyno      = fromMaybe UnknownDyno $ (maybeResult . (flip feed) "" . parse dynoParser) =<< (M.lookup "dyno" opts)
-    , path      = fromMaybe "" $ M.lookup "path" opts
+    , dyno      = fromMaybe UnknownDyno $! (maybeResult . (flip feed) "" . parse dynoParser) =<< (M.lookup "dyno" opts)
+    , path      = fromMaybe "" $! M.lookup "path" opts
     , options   = opts
     }
 

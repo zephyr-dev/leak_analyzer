@@ -15,7 +15,7 @@ import           Data.Time.Exts.Parser      (parseUnixDateTimeMicros)
 import           Data.Time.Exts.Unix        (UnixDateTimeMicros (..),
                                              createUnixDateTimeMicros)
 
-import           Data.Map.Strict (Map)
+import           Data.Map.Strict            (Map)
 import qualified Data.Map.Strict            as M
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict         as IM
